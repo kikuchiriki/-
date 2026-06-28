@@ -73,7 +73,10 @@ def _sb_rm(paths):
 def _get_farm_index_cached(_ver):
     data=_sb_dl(FARMS_INDEX)
     if data:
-        try: return json.loads(data.decode("utf-8"))
+        try:
+            parsed=json.loads(data.decode("utf-8"))
+            if isinstance(parsed, dict): return parsed
+            # 旧形式（リスト）は無視して空dictを返す
         except: pass
     return {}
 
