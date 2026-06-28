@@ -4,7 +4,6 @@ import numpy as np
 import plotly.graph_objects as go
 import re, json, io
 from pathlib import Path
-from urllib.parse import quote as _urlquote, unquote as _urlunquote
 from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
 
@@ -18,7 +17,11 @@ except ImportError:
 BUCKET = "farms"
 FARMS_INDEX = "farms_index.json"
 
-def _enc(name): return _urlquote(str(name), safe='')
+import hashlib as _hashlib
+
+def _farm_key(name):
+    """農場名をASCII安全なMD5ハッシュキーに変換"""
+    return _hashlib.md5(str(name).encode("utf-8")).hexdigest()[:16]
 
 @st.cache_resource
 def _get_sb():
@@ -65,40 +68,47 @@ def _sb_rm(paths):
     try: sb.storage.from_(BUCKET).remove(paths)
     except: pass
 
-# ─ 農場インデックス管理 ─
+# ─ 農場インデックス管理（farms_index.json: {hash: 表示名}） ─
 @st.cache_data(ttl=30, show_spinner=False)
-def _get_farm_list_cached(_ver):
+def _get_farm_index_cached(_ver):
     data=_sb_dl(FARMS_INDEX)
     if data:
-        try: return sorted(json.loads(data.decode("utf-8")))
+        try: return json.loads(data.decode("utf-8"))
         except: pass
-    return []
+    return {}
+
+def _get_farm_index():
+    return _get_farm_index_cached(st.session_state.get("upload_ver",0))
 
 def get_farm_list():
-    return _get_farm_list_cached(st.session_state.get("upload_ver",0))
+    return sorted(_get_farm_index().values())
 
 def _add_farm(farm_name):
-    farms=set(get_farm_list())
-    farms.add(farm_name)
-    _sb_ul(FARMS_INDEX, json.dumps(sorted(farms),ensure_ascii=False).encode("utf-8"),"application/json")
+    idx=_get_farm_index()
+    k=_farm_key(farm_name)
+    if k not in idx:
+        idx[k]=farm_name
+        _sb_ul(FARMS_INDEX, json.dumps(idx,ensure_ascii=False).encode("utf-8"),"application/json")
 
 def delete_farm(farm_name):
-    farms=set(get_farm_list())
-    farms.discard(farm_name)
-    _sb_ul(FARMS_INDEX, json.dumps(sorted(farms),ensure_ascii=False).encode("utf-8"),"application/json")
-    items=_sb_list(_enc(farm_name))
-    paths=[f"{_enc(farm_name)}/{i['name']}" for i in items if i.get("id")]
+    idx=_get_farm_index()
+    k=_farm_key(farm_name)
+    if k in idx: del idx[k]
+    _sb_ul(FARMS_INDEX, json.dumps(idx,ensure_ascii=False).encode("utf-8"),"application/json")
+    items=_sb_list(k)
+    paths=[f"{k}/{i['name']}" for i in items if i.get("id")]
     _sb_rm(paths)
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _load_df_cached(farm_name, keywords_t, _ver):
-    items=_sb_list(_enc(farm_name))
+    k=_farm_key(farm_name)
+    items=_sb_list(k)
     for item in items:
         if item.get("id") is None: continue
         stem=item["name"].rsplit(".",1)[0].lower()
         for kw in keywords_t:
             if kw in stem:
-                data=_sb_dl(f"{_enc(farm_name)}/{item['name']}")
+                data=_sb_dl(f"{k}/{item['name']}")
                 if data is None: return None, None
                 bio=io.BytesIO(data)
                 try:
@@ -124,7 +134,8 @@ def load_from_sb(farm_name, keywords):
 def save_farm_file(uf, farm_name, label):
     uf.seek(0)
     ext=Path(uf.name).suffix.lower()
-    path=f"{_enc(farm_name)}/{label}{ext}"
+    k=_farm_key(farm_name)
+    path=f"{k}/{label}{ext}"
     mime=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           if ext in [".xlsx",".xls"] else "text/csv")
     return _sb_ul(path, uf.read(), mime)
