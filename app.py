@@ -45,14 +45,17 @@ def _sb_dl(path):
 
 def _sb_ul(path, data, mime="text/csv"):
     sb=_get_sb()
-    if not sb: return False
+    if not sb:
+        st.error("Supabase未接続。SecretsにAPIキーが設定されているか確認してください。")
+        return False
     try:
         try: sb.storage.from_(BUCKET).remove([path])
         except: pass
-        sb.storage.from_(BUCKET).upload(path, data, {"content-type": mime, "upsert": "true"})
+        sb.storage.from_(BUCKET).upload(path, data, {"content_type": mime, "upsert": True})
         return True
     except Exception as e:
-        st.error(f"保存エラー: {e}"); return False
+        st.error(f"保存エラー: {e}")
+        return False
 
 def _sb_rm(paths):
     sb=_get_sb()
@@ -920,7 +923,3 @@ with TABS[5]:
         with cb:
             if st.button("元のデータに戻す"):
                 st.session_state[skey]=raw_herd_df.copy(); st.success("元のデータに戻しました。"); st.rerun()
-        st.caption("※ 修正はアプリ内のみ有効です。元のCSVファイルは変更されません。")
-
-_ns.update({"view_toggle_idx":_vt_opts.index(view_toggle),"min_heifer_age":min_heifer_age})
-save_s(_ns)
