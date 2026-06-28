@@ -4,6 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 import re, json, io
 from pathlib import Path
+from urllib.parse import quote as _urlquote, unquote as _urlunquote
 from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
 
@@ -15,6 +16,9 @@ except ImportError:
     _HAS_SB = False
 
 BUCKET = "farms"
+
+def _enc(name): return _urlquote(str(name), safe='')
+def _dec(name): return _urlunquote(str(name))
 
 @st.cache_resource
 def _get_sb():
@@ -58,17 +62,17 @@ def _sb_rm(paths):
 
 def get_farm_list():
     items=_sb_list("")
-    return sorted({i["name"] for i in items if i.get("id") is None and i.get("name") and "." not in i["name"]})
+    return sorted({_dec(i["name"]) for i in items if i.get("id") is None and i.get("name") and "." not in i["name"]})
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _load_df_cached(farm_name, keywords_t, _ver):
-    items=_sb_list(farm_name)
+    items=_sb_list(_enc(farm_name))
     for item in items:
         if item.get("id") is None: continue
         stem=item["name"].rsplit(".",1)[0].lower()
         for kw in keywords_t:
             if kw in stem:
-                data=_sb_dl(f"{farm_name}/{item['name']}")
+                data=_sb_dl(f"{_enc(farm_name)}/{item['name']}")
                 if data is None: return None, None
                 bio=io.BytesIO(data)
                 try:
@@ -94,14 +98,14 @@ def load_from_sb(farm_name, keywords):
 def save_farm_file(uf, farm_name, label):
     uf.seek(0)
     ext=Path(uf.name).suffix.lower()
-    path=f"{farm_name}/{label}{ext}"
+    path=f"{_enc(farm_name)}/{label}{ext}"
     mime=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           if ext in [".xlsx",".xls"] else "text/csv")
     return _sb_ul(path, uf.read(), mime)
 
 def delete_farm(farm_name):
-    items=_sb_list(farm_name)
-    paths=[f"{farm_name}/{i['name']}" for i in items if i.get("id")]
+    items=_sb_list(_enc(farm_name))
+    paths=[f"{_enc(farm_name)}/{i['name']}" for i in items if i.get("id")]
     _sb_rm(paths)
 
 @st.cache_data(ttl=30, show_spinner=False)
