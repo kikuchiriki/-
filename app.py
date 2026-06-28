@@ -16,9 +16,9 @@ except ImportError:
     _HAS_SB = False
 
 BUCKET = "farms"
+FARMS_INDEX = "farms_index.json"
 
 def _enc(name): return _urlquote(str(name), safe='')
-def _dec(name): return _urlunquote(str(name))
 
 @st.cache_resource
 def _get_sb():
@@ -35,7 +35,9 @@ def _sb_list(prefix=""):
     sb=_get_sb()
     if not sb: return []
     try: return sb.storage.from_(BUCKET).list(prefix) or []
-    except: return []
+    except Exception as e:
+        st.sidebar.warning(f"一覧取得エラー: {e}")
+        return []
 
 def _sb_dl(path):
     sb=_get_sb()
@@ -63,9 +65,30 @@ def _sb_rm(paths):
     try: sb.storage.from_(BUCKET).remove(paths)
     except: pass
 
+# ─ 農場インデックス管理 ─
+@st.cache_data(ttl=30, show_spinner=False)
+def _get_farm_list_cached(_ver):
+    data=_sb_dl(FARMS_INDEX)
+    if data:
+        try: return sorted(json.loads(data.decode("utf-8")))
+        except: pass
+    return []
+
 def get_farm_list():
-    items=_sb_list("")
-    return sorted({_dec(i["name"]) for i in items if i.get("id") is None and i.get("name") and "." not in i["name"]})
+    return _get_farm_list_cached(st.session_state.get("upload_ver",0))
+
+def _add_farm(farm_name):
+    farms=set(get_farm_list())
+    farms.add(farm_name)
+    _sb_ul(FARMS_INDEX, json.dumps(sorted(farms),ensure_ascii=False).encode("utf-8"),"application/json")
+
+def delete_farm(farm_name):
+    farms=set(get_farm_list())
+    farms.discard(farm_name)
+    _sb_ul(FARMS_INDEX, json.dumps(sorted(farms),ensure_ascii=False).encode("utf-8"),"application/json")
+    items=_sb_list(_enc(farm_name))
+    paths=[f"{_enc(farm_name)}/{i['name']}" for i in items if i.get("id")]
+    _sb_rm(paths)
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _load_df_cached(farm_name, keywords_t, _ver):
@@ -105,11 +128,6 @@ def save_farm_file(uf, farm_name, label):
     mime=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           if ext in [".xlsx",".xls"] else "text/csv")
     return _sb_ul(path, uf.read(), mime)
-
-def delete_farm(farm_name):
-    items=_sb_list(_enc(farm_name))
-    paths=[f"{_enc(farm_name)}/{i['name']}" for i in items if i.get("id")]
-    _sb_rm(paths)
 
 @st.cache_data(ttl=30, show_spinner=False)
 def _load_s_cached(_ver):
@@ -357,6 +375,7 @@ with st.sidebar.expander("農場データを追加・更新", expanded=(not farm
         if up_died:  save_farm_file(up_died, new_farm, "died");  saved.append("死亡・除籍")
         if up_bred:  save_farm_file(up_bred, new_farm, "bred");  saved.append("授精記録")
         if saved:
+            _add_farm(new_farm)
             st.session_state["upload_ver"] = st.session_state.get("upload_ver",0)+1
             st.cache_data.clear()
             st.success(f"保存完了: {', '.join(saved)}"); st.rerun()
@@ -922,4 +941,4 @@ with TABS[5]:
                 st.session_state[skey]=edited; st.success("修正を適用しました。"); st.rerun()
         with cb:
             if st.button("元のデータに戻す"):
-                st.session_state[skey]=raw_herd_df.copy(); st.success("元のデータに戻しました。"); st.rerun()
+                st.session_state[skey]=raw_herd_df.copy(); st.success("元のデータに戻しました。"); st.rerun
