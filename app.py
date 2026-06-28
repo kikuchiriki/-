@@ -51,7 +51,7 @@ def _sb_ul(path, data, mime="text/csv"):
     try:
         try: sb.storage.from_(BUCKET).remove([path])
         except: pass
-        sb.storage.from_(BUCKET).upload(path, data, {"content_type": mime, "upsert": True})
+        sb.storage.from_(BUCKET).upload(path, data, {"content_type": mime, "upsert": "true"})
         return True
     except Exception as e:
         st.error(f"保存エラー: {e}")
