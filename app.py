@@ -161,7 +161,7 @@ SEMEN_GROUPS = {
     "F1授精のみ":["F1授精"],"F1移植のみ":["F1移植"],
     "和牛登録卵のみ":["和牛登録卵"],
 }
-GESTATION_DAYS = 280
+GESTATION_DAYS = 285
 COL_MAP = {
     "id":         ["ID","id","牛番号","COWID"],
     "lact":       ["LACT","lact","産次","産次数"],
@@ -413,7 +413,7 @@ st.markdown(
     f"</div>", unsafe_allow_html=True)
 if not farm_list: st.info("サイドバーから農場データを登録してください。")
 
-TABS = st.tabs(["牛群構成","カウフロー","H判別目標","育成牛管理","精液別分析","データ確認・修正","農家用URL発行"])
+TABS = st.tabs(["牛群構成","カウフロー","H判別目標","育成牛管理","精液別分析","分娩予定リスト","データ確認・修正","農家用URL発行"])
 _ns = dict(_S)
 
 # ═══ TAB 2: カウフロー ═══
@@ -486,9 +486,9 @@ with TABS[1]:
     prev_act_culling = month_cnt(died_df,prev_month)
     prev_act_h_ai    = month_cnt(bred_df,prev_month,cat="H判別")
     prev_act_h_preg  = month_cnt(bred_df,prev_month,cat="H判別",preg=1)
-    nxt_culling = max(0,m_culling+max(0,m_culling-act_culling))
-    nxt_h_ai    = max(0,m_h_ai   +max(0,m_h_ai   -act_h_ai))
-    nxt_h_preg  = max(0,m_h_preg +max(0,m_h_preg -act_h_preg))
+    today_h_ai    = m_h_ai    - prev_act_h_ai
+    today_h_preg  = m_h_preg  - prev_act_h_preg
+    today_culling = m_culling  - prev_act_culling
 
     def ach_pct(act,tgt):
         if tgt<=0: return None
@@ -503,9 +503,9 @@ with TABS[1]:
 
     st.markdown("#### 月間目標サマリー")
     rows = [
-        ("H判別授精", f"{m_h_ai:.0f}",   str(prev_act_h_ai),  ach_pct(prev_act_h_ai, m_h_ai),   str(act_h_ai),  ach_pct(act_h_ai, m_h_ai),   False, f"{nxt_h_ai:.0f}"),
-        ("H判別受胎", f"{m_h_preg:.0f}", str(prev_act_h_preg), ach_pct(prev_act_h_preg,m_h_preg), str(act_h_preg),ach_pct(act_h_preg,m_h_preg), False, f"{nxt_h_preg:.0f}"),
-        ("淘汰",      f"{m_culling:.0f}",str(prev_act_culling),ach_pct(prev_act_culling,m_culling),str(act_culling),ach_pct(act_culling,m_culling),True, f"{nxt_culling:.0f}"),
+        ("H判別授精", f"{m_h_ai:.0f}",   str(prev_act_h_ai),  ach_pct(prev_act_h_ai, m_h_ai),   str(act_h_ai),  ach_pct(act_h_ai, m_h_ai),   False, f"{today_h_ai:+.0f}"),
+        ("H判別受胎", f"{m_h_preg:.0f}", str(prev_act_h_preg), ach_pct(prev_act_h_preg,m_h_preg), str(act_h_preg),ach_pct(act_h_preg,m_h_preg), False, f"{today_h_preg:+.0f}"),
+        ("淘汰",      f"{m_culling:.0f}",str(prev_act_culling),ach_pct(prev_act_culling,m_culling),str(act_culling),ach_pct(act_culling,m_culling),True, f"{today_culling:+.0f}"),
     ]
     tbl_html = """<style>
 .summary-tbl{border-collapse:collapse;width:100%;font-size:1.05rem}
@@ -517,7 +517,7 @@ with TABS[1]:
 .ok{color:#27ae60;font-weight:700}.ng{color:#e74c3c;font-weight:700}.prev-val{color:#78909c}
 </style>
 <table class="summary-tbl">
-<tr><th>指標</th><th>月別目標（頭）</th><th class="prev-hdr">先月実績（頭）</th><th class="prev-hdr">先月達成度</th><th>今月実績（頭）</th><th>今月達成度</th><th>来月目標（頭）</th></tr>
+<tr><th>指標</th><th>月別目標（頭）</th><th class="prev-hdr">先月実績（頭）</th><th class="prev-hdr">先月達成度</th><th>今月実績（頭）</th><th>今月達成度</th><th>今月目標（先月差引）</th></tr>
 """
     for lbl,tgt,prev_act,prev_pct,act,pct,reverse,nxt in rows:
         pd_str,pd_cls = fmt_ach(prev_pct, reverse)
@@ -540,13 +540,9 @@ with TABS[1]:
         ymin = min(min([-d for d in died_c]+[-1]), -m_culling-2)
         fig = go.Figure()
         fig.add_trace(go.Bar(x=months,y=first_c,name="初産分娩",marker_color="#27ae60",
-            text=[str(v) if v>0 else "" for v in first_c],textposition="inside",insidetextanchor="middle",yaxis="y1"))
+            text=[str(v) if v>0 else "" for v in first_c],textposition="inside",insidetextanchor="middle"))
         fig.add_trace(go.Bar(x=months,y=[-d for d in died_c],name="死亡・除籍",marker_color="#e74c3c",
-            text=[str(v) if v>0 else "" for v in died_c],textposition="inside",insidetextanchor="middle",yaxis="y1"))
-        fig.add_trace(go.Scatter(x=months,y=net,name="純増減",mode="lines+markers+text",
-            line=dict(color="#2c3e50",width=2.5),marker=dict(size=8,color="#2c3e50"),
-            text=[f"{v:+d}" for v in net],textposition="top center",
-            textfont=dict(size=11,color="#2c3e50"),yaxis="y2"))
+            text=[str(v) if v>0 else "" for v in died_c],textposition="inside",insidetextanchor="middle"))
         fig.add_hline(y=m_first_calv_goal,line_dash="dash",line_color="#27ae60",
             annotation_text=f"初産分娩目標 {m_first_calv_goal:.0f}頭/月",annotation_position="top left",
             annotation_font_size=11,annotation_font_color="#27ae60",annotation_bgcolor="rgba(255,255,255,0.85)")
@@ -555,14 +551,11 @@ with TABS[1]:
             annotation_font_size=11,annotation_font_color="#e74c3c",annotation_bgcolor="rgba(255,255,255,0.85)")
         fig.add_hline(y=0,line_color="rgba(0,0,0,0.25)",line_width=1.5)
         fig.update_layout(
-            barmode="relative",height=440,
+            barmode="relative",height=420,
             yaxis=dict(title="分娩・除籍 頭数",range=[ymin*1.3,ymax*1.4],
                        zeroline=True,zerolinecolor="rgba(0,0,0,0.3)",zerolinewidth=2,
                        gridcolor="rgba(0,0,0,0.06)"),
-            yaxis2=dict(title="純増減 頭数",overlaying="y",side="right",
-                        range=[ymin*1.3,ymax*1.4],showgrid=False,
-                        tickfont=dict(color="#2c3e50"),title_font=dict(color="#2c3e50")),
-            margin=dict(t=30,b=10,r=80),
+            margin=dict(t=30,b=10,r=40),
             legend=dict(orientation="h",y=-0.18,x=0),
             plot_bgcolor="rgba(250,250,252,1)")
         st.plotly_chart(fig,use_container_width=True)
@@ -586,26 +579,7 @@ with TABS[1]:
                 legend=dict(orientation="h",y=-0.22,x=0),margin=dict(t=10,b=10))
             st.plotly_chart(fig_l,use_container_width=True)
 
-    st.markdown("---")
-    st.markdown("#### 今後12ヶ月の分娩予測（授精受胎記録ベース）")
-    fmonths,fc_total,fc_heifer = calving_forecast(bred_df,n_months=12)
-    if not fmonths:
-        st.info("授精記録（受胎結果P付き）があれば、妊娠期間280日を加算して分娩予測を表示します。")
-    else:
-        fc_cow_vals = [int(fc_total[m])-int(fc_heifer[m]) for m in fmonths]
-        fc_h_vals   = [int(fc_heifer[m]) for m in fmonths]
-        fig_fc = go.Figure()
-        fig_fc.add_trace(go.Bar(x=fmonths,y=fc_h_vals,name="初産分娩予測",marker_color="#27ae60"))
-        fig_fc.add_trace(go.Bar(x=fmonths,y=fc_cow_vals,name="経産分娩予測",marker_color="#2980b9"))
-        fig_fc.add_hline(y=goal_annual_calv/12,line_dash="dash",line_color="#e67e22",
-            annotation_text=f"月間分娩目標 {goal_annual_calv/12:.0f}頭",annotation_position="top left",
-            annotation_font_size=11,annotation_font_color="#e67e22",annotation_bgcolor="rgba(255,255,255,.8)")
-        fig_fc.update_layout(barmode="stack",height=340,yaxis_title="頭数",
-            legend=dict(orientation="h",y=-0.22,x=0),margin=dict(t=20,b=10,r=40))
-        st.plotly_chart(fig_fc,use_container_width=True)
-        tbl_fc = pd.DataFrame({"月":fmonths,"経産分娩":fc_cow_vals,"初産分娩":fc_h_vals,
-            "合計":[int(fc_total[m]) for m in fmonths]}).set_index("月")
-        st.dataframe(tbl_fc.T,use_container_width=True)
+
 
     if died_df is not None:
         st.markdown("---")
@@ -949,8 +923,146 @@ with TABS[4]:
                     st.dataframe(grp.rename(columns={sire_c2:"精液コード"}).style.format({"受胎率":"{:.1f}%","授精頭数":"{:.0f}","受胎頭数":"{:.0f}"}),use_container_width=True)
             _ns.update({"sire_grp_idx":grp_opts.index(sel_grp),"sire_cat_idx":cat_opts.index(sel_cat)})
 
-# ═══ TAB 6: データ確認・修正 ═══
+# ═══ TAB 6: 分娩予定リスト ═══
 with TABS[5]:
+    st.subheader("分娩予定リスト")
+
+    BREED_MAP = {"H判別":"ホルスタイン","H通常":"ホルスタイン",
+                 "F1授精":"F1","F1移植":"F1",
+                 "和牛登録卵":"和牛","和牛無登録卵":"和牛","その他":"その他"}
+    BREED_COLORS = {"ホルスタイン":"#2980b9","F1":"#8e44ad","和牛":"#e67e22","その他":"#95a5a6"}
+
+    def calving_detail(bred_df, n_months=18):
+        if bred_df is None or "_preg" not in bred_df.columns or "_date" not in bred_df.columns:
+            return pd.DataFrame()
+        df = bred_df[bred_df["_preg"]==1].copy()
+        df = df[df["_date"].notna()]
+        if df.empty: return pd.DataFrame()
+        id_c = find_col(df,"id")
+        if id_c and id_c in df.columns:
+            df = df.sort_values("_date").groupby(id_c).last().reset_index()
+        df["予定分娩日"] = df["_date"] + pd.Timedelta(days=GESTATION_DAYS)
+        df["分娩月"] = df["予定分娩日"].dt.strftime("%Y/%m")
+        df["産次区分"] = df["_lact"].apply(
+            lambda x: "初産（1産）" if x==0 else "2産" if x==1 else "3産以上" if x>=2 else "不明") if "_lact" in df.columns else "不明"
+        df["品種"] = df["_category"].map(BREED_MAP).fillna("その他") if "_category" in df.columns else "その他"
+        fmonths = [(date.today()+relativedelta(months=i)).strftime("%Y/%m") for i in range(n_months)]
+        return df[df["分娩月"].isin(fmonths)].copy()
+
+    if bred_df is None:
+        st.info("サイドバーから授精記録（BRED）を保存すると分娩予定が表示されます。")
+    else:
+        n_fc_months = st.slider("表示月数", 6, 18, 12, 1, key="fc_months")
+        df_calv = calving_detail(bred_df, n_fc_months)
+        fmonths_fc = [(date.today()+relativedelta(months=i)).strftime("%Y/%m") for i in range(n_fc_months)]
+
+        if df_calv.empty:
+            st.info("受胎確認済み（R=P）の授精記録がありません。")
+        else:
+            # ── 月別総分娩頭数 ──
+            st.markdown("#### 月別 分娩予測頭数")
+            total_by_m = df_calv.groupby("分娩月").size().reindex(fmonths_fc, fill_value=0)
+            fig_tot = go.Figure()
+            fig_tot.add_trace(go.Bar(
+                x=fmonths_fc, y=total_by_m.tolist(),
+                marker_color="#2c3e50",
+                text=[str(v) if v>0 else "" for v in total_by_m],
+                textposition="outside"))
+            if goal_annual_calv > 0:
+                fig_tot.add_hline(y=goal_annual_calv/12, line_dash="dash", line_color="#e67e22",
+                    annotation_text=f"月間分娩目標 {goal_annual_calv/12:.0f}頭",
+                    annotation_position="top left", annotation_font_size=11,
+                    annotation_font_color="#e67e22", annotation_bgcolor="rgba(255,255,255,.85)")
+            fig_tot.update_layout(height=300, yaxis_title="頭数",
+                margin=dict(t=30,b=10,r=20), plot_bgcolor="rgba(250,250,252,1)")
+            st.plotly_chart(fig_tot, use_container_width=True)
+
+            fc_col1, fc_col2 = st.columns(2)
+
+            # ── 月別 × 産次別 ──
+            with fc_col1:
+                st.markdown("#### 月別 × 産次別")
+                lact_order = ["初産（1産）","2産","3産以上","不明"]
+                lact_colors = {"初産（1産）":"#27ae60","2産":"#2980b9","3産以上":"#8e44ad","不明":"#95a5a6"}
+                pvt_l = df_calv.groupby(["分娩月","産次区分"]).size().unstack(fill_value=0)
+                fig_l = go.Figure()
+                for lg in lact_order:
+                    if lg not in pvt_l.columns: continue
+                    vs = pvt_l[lg].reindex(fmonths_fc, fill_value=0).tolist()
+                    fig_l.add_trace(go.Bar(x=fmonths_fc,y=vs,name=lg,marker_color=lact_colors[lg],
+                        text=[str(v) if v>0 else "" for v in vs],textposition="inside",insidetextanchor="middle"))
+                fig_l.update_layout(barmode="stack",height=350,yaxis_title="頭数",
+                    legend=dict(orientation="h",y=-0.28,x=0),margin=dict(t=10,b=10))
+                st.plotly_chart(fig_l, use_container_width=True)
+
+            # ── 月別 × 品種別 ──
+            with fc_col2:
+                st.markdown("#### 月別 × 品種別")
+                breed_order = ["ホルスタイン","F1","和牛","その他"]
+                pvt_b = df_calv.groupby(["分娩月","品種"]).size().unstack(fill_value=0)
+                fig_b = go.Figure()
+                for bg in breed_order:
+                    if bg not in pvt_b.columns: continue
+                    vs = pvt_b[bg].reindex(fmonths_fc, fill_value=0).tolist()
+                    fig_b.add_trace(go.Bar(x=fmonths_fc,y=vs,name=bg,marker_color=BREED_COLORS[bg],
+                        text=[str(v) if v>0 else "" for v in vs],textposition="inside",insidetextanchor="middle"))
+                fig_b.update_layout(barmode="stack",height=350,yaxis_title="頭数",
+                    legend=dict(orientation="h",y=-0.28,x=0),margin=dict(t=10,b=10))
+                st.plotly_chart(fig_b, use_container_width=True)
+
+            # ── 分娩カレンダー ──
+            st.markdown("---")
+            st.markdown("#### 分娩カレンダー")
+            cal_month = st.selectbox("表示月を選択", fmonths_fc, key="cal_month_sel")
+            df_cal = df_calv[df_calv["分娩月"]==cal_month].copy()
+            id_c = find_col(bred_df,"id")
+            if df_cal.empty:
+                st.info("この月の分娩予定はありません。")
+            else:
+                df_cal = df_cal.sort_values("予定分娩日")
+                cal_year  = int(cal_month.split("/")[0])
+                cal_mon   = int(cal_month.split("/")[1])
+                import calendar as _cal
+                first_wday, n_days = _cal.monthrange(cal_year, cal_mon)
+                events_by_day = {}
+                for _, row in df_cal.iterrows():
+                    d = row["予定分娩日"].day if pd.notna(row["予定分娩日"]) else None
+                    if d is None: continue
+                    tag = f'<span style="font-size:0.75rem;background:{BREED_COLORS.get(row["品種"],"#95a5a6")};color:#fff;border-radius:3px;padding:1px 4px;margin:1px;display:inline-block">'
+                    cow_id = str(row[id_c]) if id_c and id_c in row.index else ""
+                    tag += f'{cow_id} ({row["品種"]}/{row["産次区分"]})</span>'
+                    events_by_day.setdefault(d, []).append(tag)
+                week_headers = ["月","火","水","木","金","土","日"]
+                html = '<style>.calw{border-collapse:collapse;width:100%}.calw th{background:#2c3e50;color:#fff;padding:6px;text-align:center;font-size:.9rem}.calw td{border:1px solid #ddd;vertical-align:top;padding:4px;min-height:60px;width:14.28%;font-size:.8rem}.calw .day-num{font-weight:700;color:#333;margin-bottom:2px}.calw .weekend{background:#fafafa}.calw .empty{background:#f5f5f5}</style>'
+                html += f'<table class="calw"><tr>'
+                for wh in week_headers:
+                    html += f'<th>{wh}</th>'
+                html += '</tr><tr>'
+                for _ in range(first_wday): html += '<td class="empty"></td>'
+                cur_wday = first_wday
+                for day in range(1, n_days+1):
+                    wday = (first_wday + day - 1) % 7
+                    cls = "weekend" if wday in (5,6) else ""
+                    evs = "".join(events_by_day.get(day,[]))
+                    html += f'<td class="{cls}"><div class="day-num">{day}</div>{evs}</td>'
+                    if wday == 6 and day < n_days: html += '</tr><tr>'
+                remaining = 6 - (first_wday + n_days - 1) % 7
+                if remaining < 6:
+                    for _ in range(remaining): html += '<td class="empty"></td>'
+                html += '</tr></table>'
+                st.markdown(html, unsafe_allow_html=True)
+                st.markdown("")
+                # 一覧テーブル
+                show_cols = ["予定分娩日","産次区分","品種"]
+                if id_c and id_c in df_cal.columns: show_cols = [id_c] + show_cols
+                disp_cal = df_cal[show_cols].copy()
+                if id_c: disp_cal = disp_cal.rename(columns={id_c:"牛番号"})
+                disp_cal["予定分娩日"] = disp_cal["予定分娩日"].dt.strftime("%Y/%m/%d")
+                st.dataframe(disp_cal.reset_index(drop=True), use_container_width=True)
+
+
+# ═══ TAB 6: データ確認・修正 ═══
+with TABS[6]:
     st.subheader("データ確認・修正")
     if raw_herd_df is None:
         st.info("牛群リストを保存すると、エラー値の確認・修正ができます。")
@@ -976,8 +1088,8 @@ with TABS[5]:
                 st.session_state[skey]=raw_herd_df.copy(); st.success("元のデータに戻しました。"); st.rerun()
         st.caption("※ 修正はアプリ内のみ有効です。元のCSVファイルは変更されません。")
 
-# ═══ TAB 7: 農家用URL発行 ═══
-with TABS[6]:
+# ═══ TAB 8: 農家用URL発行 ═══
+with TABS[7]:
     st.subheader("農家用URL発行")
     st.markdown("農家に配布するURLをここで確認できます。新しい農場を追加すると自動で追加されます。")
     farmer_base_url = st.text_input(
